@@ -615,10 +615,10 @@ async def run_download(event, url, quality):
                 # Metadata extraction for upload
                 file_size = os.path.getsize(final_file)
                 status_msg = await safe_edit(status_msg, f"📤 **Uploading...**\nSize: {format_size(file_size)}", buttons=task_buttons)
-                
+
                 thumb_path = f"{final_file}.jpg"
                 subprocess.run(['ffmpeg', '-y', '-i', final_file, '-ss', '00:00:01', '-vframes', '1', thumb_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
+
                 attributes = []
                 try:
                     cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', final_file]
@@ -644,11 +644,12 @@ async def run_download(event, url, quality):
                     event.chat_id,
                     final_file,
                     caption="✅ **Download Complete**",
-                    thumb=thumb_path if os.path.exists(thumb_path) else None,
+                    thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
                     progress_callback=upload_progress_insta,
                     attributes=attributes,
                     supports_streaming=True,
-                    part_size_kb=512 
+                    connection_limit=32,
+                    part_size_kb=2048
                 )
                 await status_msg.delete()
                 os.remove(final_file)
@@ -775,23 +776,24 @@ async def run_download(event, url, quality):
 
             async def upload_progress(current, total):
                 if TASK_CANCEL.get(user_id): raise Exception("Cancelled")
-                if time.time() - last_update[0] > 4:
+                if time.time() - last_update[0] > 8:
                     text = f"📤 **Uploading**\n{get_progress_bar(current, total, start_time[0])}"
                     await safe_edit(status_msg, text, buttons=task_buttons)
                     last_update[0] = time.time()
 
-            thumb_path = f"{final_file}.jpg"
+            thumb_path = f"downloads/{user_id}_{timestamp}_video_thumb.jpg"
             subprocess.run(['ffmpeg', '-y', '-i', final_file, '-ss', '00:00:01', '-vframes', '1', thumb_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
+
             await client.send_file(
                 event.chat_id,
                 final_file,
                 caption="✅ **Download Complete**",
-                thumb=thumb_path if os.path.exists(thumb_path) else None,
+                thumb=thumb_path if thumb_path and os.path.exists(thumb_path) else None,
                 progress_callback=upload_progress,
                 attributes=attributes,
                 supports_streaming=True,
-                part_size_kb=512 
+                connection_limit=32,
+                part_size_kb=2048
             )
             
             await status_msg.delete()
