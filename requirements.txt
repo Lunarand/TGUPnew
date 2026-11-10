@@ -1,8 +1,15 @@
-telethon
+telethon>=1.45.0,<2.0.0
 cryptg
 aiohttp
 requests
 brotli
 certifi
-yt-dlp @ git+https://github.com/yt-dlp/yt-dlp.git@master
-instaloader
+
+# yt-dlp dropped Python 3.10 support in Oct 2026 (now requires Python >=3.11).
+# Pinned to a known-good stable release instead of tracking @master, so a
+# future upstream change can't silently break the workflow again. To update:
+# check https://pypi.org/project/yt-dlp/ for the latest version, bump the
+# number below, and re-run the workflow once to confirm it still installs.
+yt-dlp==2026.10.26
+
+instaloader>=4.16,<5.0.0
