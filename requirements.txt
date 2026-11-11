@@ -1,4 +1,10 @@
 telethon>=1.45.0,<2.0.0
+
+# Telethon's own docs: encryption math in pure Python is slow, and cryptg
+# "should provide a considerable speed boost" for both upload and download.
+# This is the single biggest lever Telethon exposes for transfer speed —
+# make sure it actually installs (check the bot's startup log for
+# "Using cryptg..." — if it's missing, this didn't build correctly).
 cryptg
 aiohttp
 requests
