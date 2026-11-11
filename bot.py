@@ -55,6 +55,16 @@ logging.getLogger("telethon").setLevel(logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 logging.getLogger("instaloader").setLevel(logging.WARNING)
 
+try:
+    import cryptg  # noqa: F401
+    logging.info("✅ cryptg is installed — Telethon will use fast native encryption.")
+except ImportError:
+    logging.warning(
+        "⚠️ cryptg is NOT installed — uploads/downloads will use slow pure-Python "
+        "encryption. Check that `pip install -r requirements.txt` actually built it "
+        "(it needs a C compiler on the runner; ubuntu-latest has one by default)."
+    )
+
 
 # ============================================================================
 # CONFIGURATION
@@ -337,8 +347,47 @@ async def build_video_attributes(filepath):
     return [DocumentAttributeVideo(duration=duration, w=width, h=height, supports_streaming=True)]
 
 
+def _is_faststart(filepath):
+    """Walks top-level MP4/MOV box headers to check whether 'moov' already
+    comes before 'mdat' (i.e. already faststart). Pure Python, no subprocess
+    — just a handful of small reads from the front of the file. Returns
+    False (meaning: remux it) if the layout can't be determined, to stay safe."""
+    try:
+        with open(filepath, 'rb') as f:
+            file_size = os.fstat(f.fileno()).st_size
+            pos = 0
+            while pos < file_size - 8:
+                f.seek(pos)
+                header = f.read(8)
+                if len(header) < 8:
+                    break
+                size = int.from_bytes(header[0:4], 'big')
+                box_type = header[4:8].decode('ascii', errors='ignore')
+                if box_type == 'moov':
+                    return True
+                if box_type == 'mdat':
+                    return False
+                if size == 1:  # 64-bit "largesize" follows the header
+                    size_bytes = f.read(8)
+                    if len(size_bytes) < 8:
+                        break
+                    size = int.from_bytes(size_bytes, 'big')
+                if size < 8:  # malformed / "extends to EOF" — bail out safely
+                    break
+                pos += size
+    except Exception as e:
+        logging.debug(f"_is_faststart check failed for {filepath}: {e}")
+    return False
+
+
 async def ensure_faststart(filepath, status_msg):
     if not os.path.exists(filepath) or not filepath.lower().endswith(('.mp4', '.mov')):
+        return filepath
+
+    loop = asyncio.get_event_loop()
+    already_fast = await loop.run_in_executor(None, _is_faststart, filepath)
+    if already_fast:
+        logging.info(f"{filepath} is already faststart — skipping remux")
         return filepath
 
     await safe_edit(status_msg, "🚀 **Optimizing for streaming...**")
@@ -1095,9 +1144,10 @@ async def run_standard_download(event, url, quality, task_buttons):
         if mode == 'fast':
             ydl_opts['external_downloader'] = 'aria2c'
             ydl_opts['external_downloader_args'] = [
-                '-x', '16', '-s', '16', '-k', '1M',
+                '-x', '16', '-s', '32', '-k', '1M',
                 '--file-allocation=none',
                 '--max-connection-per-server=16',
+                '--min-split-size=1M',
                 '--summary-interval=0',
                 '--console-log-level=warn',
             ]
@@ -1181,8 +1231,7 @@ async def run_standard_download(event, url, quality, task_buttons):
             progress_callback=upload_progress,
             attributes=attributes,
             supports_streaming=True,
-            connection_limit=32,
-            part_size_kb=2048,
+            part_size_kb=512,  # Telegram's documented maximum chunk size
         )
 
         update_stats(user_id, 1, file_size)
